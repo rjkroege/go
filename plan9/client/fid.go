@@ -72,25 +72,19 @@ func dirUnpack(b []byte) ([]*plan9.Dir, error) {
 			err = io.ErrUnexpectedEOF
 			break
 		}
-		n := int(b[0]) | int(b[1])<<8
-		if len(b) < n+2 {
+
+		n := int(b[0]) | int(b[1])<<8 + 2
+		if len(b) < n {
 			err = io.ErrUnexpectedEOF
 			break
 		}
 		var d *plan9.Dir
-		d, err = plan9.UnmarshalDir(b[0 : n+2])
+		d, err = plan9.UnmarshalDir(b[0 : n])
 		if err != nil {
 			break
 		}
-		b = b[n+2:]
-		if len(dirs) >= cap(dirs) {
-			ndirs := make([]*plan9.Dir, len(dirs), 2*cap(dirs))
-			copy(ndirs, dirs)
-			dirs = ndirs
-		}
-		n = len(dirs)
-		dirs = dirs[0 : n+1]
-		dirs[n] = d
+		b = b[n:]
+		dirs = append(dirs, d)
 	}
 	return dirs, err
 }
