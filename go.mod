@@ -12,5 +12,6 @@ require (
 	dmitri.shuralyov.com/gpu/mtl v0.0.0-20201218220906-28db891af037 // indirect
 	github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802 // indirect
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20200222043503-6f7a984d4dc4 // indirect
+	github.com/goforj/godump v1.6.0 // indirect
 	golang.org/x/image v0.0.0-20190802002840-cff245a6509b // indirect
 )

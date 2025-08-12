@@ -6,7 +6,7 @@
 //
 // Usage:
 //
-//	editinacme [-nw] <file>
+//	editinacme [-nw] <file...>
 //
 // Editinacme uses the plumber to ask acme to open the file, waits until
 // the file's acme window is deleted, and exits. Use the -nw flag to exit
@@ -19,9 +19,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"9fans.net/go/acme"
 	"9fans.net/go/plan9"
@@ -39,17 +37,16 @@ func main() {
 		os.Exit(2)
 	}
 	flag.Parse()
-	if flag.NArg() != 1 {
-		flag.Usage()
-	}
 
-	file := flag.Arg(0)
-
-	fullpath, err := filepath.Abs(file)
-	if err != nil {
-		log.Fatal(err)
+	// Absolute all of the files.
+	files := make(map[string]struct{})
+	for _, f := range flag.Args() {
+		fp, err := filepath.Abs(f)
+		if err != nil {
+			log.Fatal(err)
+		}
+		files[fp] = struct{}{}
 	}
-	file = fullpath
 
 	r, err := acme.Log()
 	if err != nil {
@@ -57,8 +54,8 @@ func main() {
 	}
 	defer r.Close()
 
-	filenamechan := make(chan string)
-	if !*nowait {
+	pathschan := make(chan map[string]struct{})
+	go func() {
 		fid, err := plumb.Open("edit", plan9.OREAD)
 		if err != nil {
 			log.Fatalf("can't open plumber: %v", err)
@@ -67,49 +64,73 @@ func main() {
 		brd := bufio.NewReader(fid)
 		m := new(plumb.Message)
 
-		go func() {
-			for {
-				err := m.Recv(brd)
-				if err != nil {
-					log.Fatalf("recv: %s", err)
+		basepaths := make(map[string]struct{})
+
+		// This assumes that I will see plumb messages for all files. If plumber
+		// crashes part way through, this tool is unlikely to recover successfully.
+		for len(files) > len(basepaths) {
+			err := m.Recv(brd)
+			if err != nil {
+				log.Fatalf("recv: %s", err)
+			}
+			// Consider making this into some kind of helper function.
+			addr := m.LookupAttr("addr")
+			path := string(m.Data)
+
+			if addr == "" {
+				if _, ok := files[path]; ok {
+					basepaths[path] = struct{}{}
 				}
-				if filename, likelymy := likelymyplumbrequest(m, file); likelymy {
-					filenamechan <- filename
-					return
+			} else {
+				if _, ok := files[path+":"+addr]; ok {
+					basepaths[path] = struct{}{}
 				}
 			}
-		}()
+		}
+		pathschan <- basepaths
+	}()
+
+	for k := range files {
+		// TODO(rjk): It's possible to lift this into a helper function.
+		sfid, err := plumb.Open("send", plan9.OWRITE)
+		if err != nil {
+			log.Fatalf("can't open plumber: %v", err)
+		}
+		defer sfid.Close()
+		spm := new(plumb.Message)
+
+		spm.Src = "editinacme"
+		spm.Dst = "edit"
+		pwd, err := os.Getwd()
+		if err != nil {
+			log.Fatalf("no current dir: %v", err)
+		}
+		spm.Dir = pwd
+		spm.Type = "text"
+		spm.Data = []byte(k)
+
+		// I explicitly assumed that the plumber service must stay up.
+		// Changing the edit destination will confuse the tool.
+		if err := spm.Send(sfid); err != nil {
+			log.Fatalf("can't send plumb message: %v", err)
+		}
 	}
 
-	log.Printf("editing %s", file)
-	out, err := exec.Command("plumb", "-d", "edit", file).CombinedOutput()
-	if err != nil {
-		log.Fatalf("executing plumb: %v\n%s", err, out)
-	}
+	// Plumber has processed all of the messages and we know now their actual
+	// paths.
+	paths := <-pathschan
+
+	// TODO(rjk): Loop here over all of the paths and set tags.
 
 	if !*nowait {
-		filename := <-filenamechan
-		for {
+		for len(paths) > 0 {
 			ev, err := r.Read()
 			if err != nil {
 				log.Fatalf("reading acme log: %v", err)
 			}
-			if ev.Op == "del" && ev.Name == filename {
-				break
+			if ev.Op == "del" {
+				delete(paths, ev.Name)
 			}
 		}
 	}
-}
-
-// likelymyplumbrequest applies some heuristics to determine if this
-// message likely corresponds to the just made plumb edit request and
-// returns the filename that the plumber asked Acme to open.
-func likelymyplumbrequest(msg *plumb.Message, arg string) (string, bool) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("aww shucks! %v", err)
-	}
-	plumbedfname := string(msg.Data)
-	myreq := (msg.Dir == cwd && strings.HasPrefix(arg, plumbedfname))
-	return plumbedfname, myreq
 }
