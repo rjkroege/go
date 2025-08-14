@@ -6,7 +6,7 @@
 //
 // Usage:
 //
-//	editinacme [-nw] <file...>
+//	editinacme [-nw] [-tag <tag>] <file...>
 //
 // Editinacme uses the plumber to ask acme to open the file, waits until
 // the file's acme window is deleted, and exits. Use the -nw flag to exit
@@ -31,6 +31,7 @@ func main() {
 	log.SetPrefix("editinacme: ")
 
 	nowait := flag.Bool("nw", false, "Don't wait for Acme to close the file")
+	moretag := flag.String("tag", "", "Set extra tag on the opened window")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: editinacme file\n")
@@ -116,21 +117,39 @@ func main() {
 		}
 	}
 
-	// Plumber has processed all of the messages and we know now their actual
+	// Plumber has processed all of the messages and we now know their actual
 	// paths.
 	paths := <-pathschan
 
-	// TODO(rjk): Loop here over all of the paths and set tags.
-
-	if !*nowait {
-		for len(paths) > 0 {
-			ev, err := r.Read()
-			if err != nil {
-				log.Fatalf("reading acme log: %v", err)
+	for len(paths) > 0 {
+		ev, err := r.Read()
+		if err != nil {
+			log.Fatalf("reading acme log: %v", err)
+		}
+		if ev.Op == "new" {
+			if _, ok := paths[ev.Name]; ok {
+				addtotag(ev.ID, *moretag)
 			}
-			if ev.Op == "del" {
+			if *nowait {
 				delete(paths, ev.Name)
 			}
 		}
+
+		if ev.Op == "del" && !*nowait {
+			delete(paths, ev.Name)
+		}
 	}
+}
+
+func addtotag(id int, moretag string) {
+	ow, err := acme.Open(id, nil)
+	defer ow.CloseFiles()
+	if err != nil {
+		log.Fatalf("can't open window %d: %v", id, err)
+	}
+
+	// TODO(rjk): plumb this in
+	//			ow.Fprintf("tag", "bubble")
+	ow.Fprintf("tag", moretag)
+
 }
