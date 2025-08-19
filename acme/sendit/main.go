@@ -83,4 +83,6 @@ func main() {
 		log.Fatalf("didn't send email: %v", err)
 	}
 
+	// Close the window.
+	win.Ctl("del")
 }
