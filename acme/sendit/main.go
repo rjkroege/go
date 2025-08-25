@@ -84,5 +84,11 @@ func main() {
 	}
 
 	// Close the window.
-	win.Ctl("del")
+	if err := win.Ctl("del"); err != nil {
+	}
+
+	// Remove the file if we sent it.
+	if err := os.Remove(samfile); err != nil {
+		log.Fatalf("can't remove the file %s: %v", samfile, err)
+	}
 }
