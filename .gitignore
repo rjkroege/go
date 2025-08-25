@@ -1,5 +1,8 @@
 # binaries
 /editinacme
+/sendit
+/reply
+/logplumbs
 
 # clutter
 .DS_Store
