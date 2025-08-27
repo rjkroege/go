@@ -12,17 +12,22 @@ import (
 	"time"
 
 	"9fans.net/go/acme"
+	"github.com/tcnksm/go-gitconfig"
 )
 
-const mestring = `"Robert Kroeger" <rjkroege@liqui.org>`
-
 func main() {
-	log.Println("hi")
-
-	// TODO(rjk): Configure me externally. My email address shouldn't be baked in.
-	me, err := mail.ParseAddress(mestring)
+	// We need an email address for the sender. Try $EMAIL, then git config.
+	mailaddr := os.Getenv("EMAIL")
+	if mailaddr == "" {
+		var err error
+		mailaddr, err = gitconfig.Email()
+		if err != nil {
+			log.Fatalf("can't read email from .gitconfig %v", err)
+		}
+	}
+	me, err := mail.ParseAddress(mailaddr)
 	if err != nil {
-		log.Fatalf("me %q is an invalid email address: %v", mestring, err)
+		log.Fatalf("me %q is an invalid email address: %v", mailaddr, err)
 	}
 
 	// Get the environment variable values
