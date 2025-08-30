@@ -12,7 +12,8 @@ that hues more closely to original Acme and wonder why Edwood also
 exists. I aspire to add features to Edwood that eventually
 differentiate it from Acme.
 
-```
-$ go get github.com/rjkroege/go
+```rc
+go mod edit -replace 9fans.net/go=github.com/rjkroege/go@latest
+go mod tidy
 ```
 
