@@ -1,4 +1,4 @@
-module 9fans.net/go
+module github.com/rjkroege/go
 
 go 1.23.0
 
