@@ -15,8 +15,10 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -49,13 +51,10 @@ func main() {
 		files[fp] = struct{}{}
 	}
 
-	r, err := acme.Log()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer r.Close()
+	plumbedchan := make(chan string)
+	editopenedchan := make(chan acme.LogEvent)
+	editclosedchan := make(chan acme.LogEvent)
 
-	pathschan := make(chan map[string]struct{})
 	go func() {
 		fid, err := plumb.Open("edit", plan9.OREAD)
 		if err != nil {
@@ -65,11 +64,9 @@ func main() {
 		brd := bufio.NewReader(fid)
 		m := new(plumb.Message)
 
-		basepaths := make(map[string]struct{})
-
 		// This assumes that I will see plumb messages for all files. If plumber
 		// crashes part way through, this tool is unlikely to recover successfully.
-		for len(files) > len(basepaths) {
+		for seen := 0; seen < len(files); {
 			err := m.Recv(brd)
 			if err != nil {
 				log.Fatalf("recv: %s", err)
@@ -80,63 +77,101 @@ func main() {
 
 			if addr == "" {
 				if _, ok := files[path]; ok {
-					basepaths[path] = struct{}{}
+					seen++
+					plumbedchan <- path
 				}
 			} else {
 				if _, ok := files[path+":"+addr]; ok {
-					basepaths[path] = struct{}{}
+					seen++
+					plumbedchan <- path
 				}
 			}
 		}
-		pathschan <- basepaths
 	}()
 
-	for k := range files {
-		// TODO(rjk): It's possible to lift this into a helper function.
-		sfid, err := plumb.Open("send", plan9.OWRITE)
-		if err != nil {
-			log.Fatalf("can't open plumber: %v", err)
-		}
-		defer sfid.Close()
-		spm := new(plumb.Message)
-
-		spm.Src = "editinacme"
-		spm.Dst = "edit"
-		pwd, err := os.Getwd()
-		if err != nil {
-			log.Fatalf("no current dir: %v", err)
-		}
-		spm.Dir = pwd
-		spm.Type = "text"
-		spm.Data = []byte(k)
-
-		// I explicitly assumed that the plumber service must stay up.
-		// Changing the edit destination will confuse the tool.
-		if err := spm.Send(sfid); err != nil {
-			log.Fatalf("can't send plumb message: %v", err)
-		}
+	r, err := acme.Log()
+	if err != nil {
+		log.Fatal(err)
 	}
+	defer r.Close()
 
-	// Plumber has processed all of the messages and we now know their actual
-	// paths.
-	paths := <-pathschan
+	go func() {
+		for {
+			ev, err := r.Read()
+			switch {
+			case errors.Is(err, io.EOF):
+				// We closed r.
+				return
+			case err != nil:
+				log.Fatalf("reading acme log: %v", err)
+			}
 
-	for len(paths) > 0 {
-		ev, err := r.Read()
-		if err != nil {
-			log.Fatalf("reading acme log: %v", err)
+			if ev.Op == "new" {
+				addtotag(ev.ID, *moretag)
+				editopenedchan <- ev
+			}
+
+			if ev.Op == "del" {
+				editclosedchan <- ev
+			}
 		}
-		if ev.Op == "new" {
+	}()
+
+	go func() {
+		for k := range files {
+			// TODO(rjk): It's possible to lift this into a helper function.
+			sfid, err := plumb.Open("send", plan9.OWRITE)
+			if err != nil {
+				log.Fatalf("can't open plumber: %v", err)
+			}
+			defer sfid.Close()
+			spm := new(plumb.Message)
+
+			spm.Src = "editinacme"
+			spm.Dst = "edit"
+			pwd, err := os.Getwd()
+			if err != nil {
+				log.Fatalf("no current dir: %v", err)
+			}
+			spm.Dir = pwd
+			spm.Type = "text"
+			spm.Data = []byte(k)
+
+			// I explicitly assumed that the plumber service must stay up.
+			// Changing the edit destination will confuse the tool.
+			if err := spm.Send(sfid); err != nil {
+				log.Fatalf("can't send plumb message: %v", err)
+			}
+		}
+	}()
+
+	paths := make(map[string]struct{})
+
+	for {
+		select {
+		case p := <-plumbedchan:
+			// TODO(rjk): There is a possible race condition here where the
+			// edit event arrives before the plumb event.
+			paths[p] = struct{}{}
+		case ev := <-editopenedchan:
 			if _, ok := paths[ev.Name]; ok {
 				addtotag(ev.ID, *moretag)
+				if *nowait {
+					delete(paths, ev.Name)
+					if len(paths) == 0 {
+						r.Close()
+						return
+					}
+				}
+			} else {
+				// TODO(rjk): Address the race condition here.
 			}
-			if *nowait {
-				delete(paths, ev.Name)
-			}
-		}
-
-		if ev.Op == "del" && !*nowait {
+		case ev := <-editclosedchan:
 			delete(paths, ev.Name)
+			if len(paths) == 0 {
+				r.Close()
+				return
+			}
 		}
 	}
 }
@@ -147,9 +182,5 @@ func addtotag(id int, moretag string) {
 	if err != nil {
 		log.Fatalf("can't open window %d: %v", id, err)
 	}
-
-	// TODO(rjk): plumb this in
-	//			ow.Fprintf("tag", "bubble")
 	ow.Fprintf("tag", moretag)
-
 }
