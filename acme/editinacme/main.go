@@ -107,7 +107,6 @@ func main() {
 			}
 
 			if ev.Op == "new" {
-				addtotag(ev.ID, *moretag)
 				editopenedchan <- ev
 			}
 
