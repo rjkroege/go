@@ -4,6 +4,7 @@
 package client // import "9fans.net/go/plan9/client"
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -11,10 +12,6 @@ import (
 
 	"9fans.net/go/plan9"
 )
-
-type Error string
-
-func (e Error) Error() string { return string(e) }
 
 type Conn struct {
 	// We wrap the underlying conn type so that
@@ -27,7 +24,7 @@ type Conn struct {
 	released bool
 }
 
-var errClosed = fmt.Errorf("connection has been closed")
+var ErrClosed = errors.New("connection has been closed")
 
 // Close forces a close of the connection and all Fids derived
 // from it.
@@ -50,7 +47,7 @@ func (c *Conn) conn() (*conn, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c._c == nil {
-		return nil, errClosed
+		return nil, ErrClosed
 	}
 	return c._c, nil
 }
@@ -277,7 +274,7 @@ func (c *conn) rpc(tx *plan9.Fcall, clunkFid *Fid) (rx *plan9.Fcall, err error) 
 		return nil, c.getErr()
 	}
 	if rx.Type == plan9.Rerror {
-		return nil, Error(rx.Ename)
+		return nil, errors.New(string(rx.Ename))
 	}
 	if rx.Type != tx.Type+1 {
 		return nil, plan9.ProtocolError("packet type mismatch")
@@ -294,7 +291,7 @@ func (c *conn) release() error {
 		return nil
 	}
 	err := c.rwc.Close()
-	c.setErr(errClosed)
+	c.setErr(ErrClosed)
 	return err
 }
 

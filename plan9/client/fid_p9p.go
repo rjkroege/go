@@ -4,6 +4,7 @@
 package client
 
 import (
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -31,7 +32,7 @@ func (fid *Fid) conn() (*conn, error) {
 	c := fid._c
 	fid.f.Unlock()
 	if c == nil {
-		return nil, errClosed
+		return nil, ErrClosed
 	}
 	return c, nil
 }
@@ -56,7 +57,7 @@ func (fid *Fid) clunked() error {
 	fid.f.Lock()
 	defer fid.f.Unlock()
 	if fid._c == nil {
-		return errClosed
+		return ErrClosed
 	}
 	fid._c.putfidnum(fid.fid)
 	fid._c.release()
@@ -170,7 +171,7 @@ func (fid *Fid) Seek(n int64, whence int) (int64, error) {
 		n += fid.offset
 		if n < 0 {
 			fid.f.Unlock()
-			return 0, Error("negative offset")
+			return 0, errors.New("negative offset")
 		}
 		fid.offset = n
 		fid.f.Unlock()
@@ -182,14 +183,14 @@ func (fid *Fid) Seek(n int64, whence int) (int64, error) {
 		}
 		n += int64(d.Length)
 		if n < 0 {
-			return 0, Error("negative offset")
+			return 0, errors.New("negative offset")
 		}
 		fid.f.Lock()
 		fid.offset = n
 		fid.f.Unlock()
 
 	default:
-		return 0, Error("bad whence in seek")
+		return 0, errors.New("bad whence in seek")
 	}
 
 	return n, nil
@@ -240,7 +241,7 @@ func (fid *Fid) Walk(name string) (*Fid, error) {
 		tx := &plan9.Fcall{Type: plan9.Twalk, Fid: fromfidnum, Newfid: wfidnum, Wname: elem[0:n]}
 		rx, err := conn.rpc(tx, nil)
 		if err == nil && len(rx.Wqid) != n {
-			err = Error("file '" + name + "' not found")
+			err = errors.New("file '" + name + "' not found")
 		}
 		if err != nil {
 			if wfid != nil {
