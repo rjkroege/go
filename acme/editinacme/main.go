@@ -18,13 +18,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
 
 	"9fans.net/go/acme"
 	"9fans.net/go/plan9"
+	"9fans.net/go/plan9/client"
 	"9fans.net/go/plumb"
 )
 
@@ -99,7 +99,7 @@ func main() {
 		for {
 			ev, err := r.Read()
 			switch {
-			case errors.Is(err, io.EOF):
+			case errors.Is(err, client.ErrClosed):
 				// We closed r.
 				return
 			case err != nil:
@@ -164,6 +164,7 @@ func main() {
 				}
 			} else {
 				// TODO(rjk): Address the race condition here.
+				log.Fatalf("Race happened!")
 			}
 		case ev := <-editclosedchan:
 			delete(paths, ev.Name)
