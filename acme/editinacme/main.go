@@ -89,6 +89,26 @@ func main() {
 		}
 	}()
 
+	// If a specific file is already open in a Window, we will not get an
+	// open event from the Acme log. So instead, we create "synthetic"
+	// equivalents for all the already open files.
+	go func() {
+		wins, err := acme.Windows()
+		if err != nil {
+			log.Fatalf("can't get acme windows: %v", err)
+		}
+
+		// TODO(rjk): acme.Windows might not correctly handle Name instances
+		for _, w := range wins {
+			ev := acme.LogEvent{
+				ID:   w.ID,
+				Op:   "new",
+				Name: w.Name,
+			}
+			editopenedchan <- ev
+		}
+	}()
+
 	r, err := acme.Log()
 	if err != nil {
 		log.Fatal(err)
@@ -162,9 +182,6 @@ func main() {
 						return
 					}
 				}
-			} else {
-				// TODO(rjk): Address the race condition here.
-				log.Fatalf("Race happened!")
 			}
 		case ev := <-editclosedchan:
 			delete(paths, ev.Name)
