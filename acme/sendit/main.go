@@ -18,7 +18,7 @@ func main() {
 	winids := os.Getenv("winid")
 	winid, err := strconv.Atoi(winids)
 	if err != nil {
-		log.Fatalf("Error converting winid to int:", err)
+		log.Fatalf("Error converting winid to int: %v", err)
 	}
 
 	log.Println("samfile", samfile, "winid", winid)
@@ -57,7 +57,7 @@ func main() {
 	}
 	toaddr, err := msg.Header.AddressList("To")
 	if err != nil {
-		log.Fatalf("Error getting To address:", err)
+		log.Fatalf("Error getting To address: %v", err)
 		return
 	}
 
